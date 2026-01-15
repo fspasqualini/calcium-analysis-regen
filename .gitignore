@@ -1,0 +1,17 @@
+# Data files
+data/
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Fiji/ImageJ
+*.class
