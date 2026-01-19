@@ -104,6 +104,8 @@ python plot_traces.py -i traces.csv -o figure.png --dpi 600  # High resolution
 
 ## Classification Criteria
 
+> ⚠️ **Work in Progress**: The peak detection algorithm is not yet optimized for spontaneously beating preparations. Classification thresholds below are preliminary and subject to refinement.
+
 - **≥3 transients**: Likely Cardiomyocyte
 - **1-2 transients**: Possible Cardiomyocyte
 - **0 transients**: Likely Fibroblast
