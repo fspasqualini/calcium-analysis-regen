@@ -1,5 +1,7 @@
 # Data files
 data/
+long-batch/
+short-test/
 
 # macOS
 .DS_Store
@@ -7,6 +9,7 @@ data/
 # Python
 __pycache__/
 *.py[cod]
+.venv/
 
 # IDE
 .idea/
@@ -15,3 +18,7 @@ __pycache__/
 
 # Fiji/ImageJ
 *.class
+
+# FAST outputs
+checkpoint/
+result/
