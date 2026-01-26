@@ -2,6 +2,7 @@
 data/
 long-batch/
 short-test/
+training_data/
 
 # macOS
 .DS_Store
@@ -19,7 +20,14 @@ __pycache__/
 # Fiji/ImageJ
 *.class
 
-# FAST outputs
+# FAST outputs (large files)
 checkpoint/
-result/
+result/phase1_default/
+result/phase2_minibatch16/
+result/phase3_frankenstein/
+*.log
+
+# Keep comparison examples (small/curated)
+!result/comparison-example/
+
 Fiji/
