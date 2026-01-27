@@ -37,4 +37,8 @@ FASTcode/result/
 # Repo-level FASTcode results archive
 results-from-FASTcode/
 
+# Standard results/analysis outputs
+results/
+analysis/
+
 Fiji/

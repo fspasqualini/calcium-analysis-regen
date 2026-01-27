@@ -27,5 +27,10 @@ This repo is organized to keep **model code**, **data**, and **results** separat
 - Avoid mixing results inside model code folders.  
 - Update `.gitignore` for large or generated outputs; keep curated examples checked in.
 
+## Data & results policy
+- Put new outputs under `results/` (preferred) or `analysis/` as appropriate.
+- If outputs are large or transient, add them to `.gitignore` unless explicitly curated.
+- Keep `results-from-FASTcode/` for archived FASTcode runs only.
+
 ## Getting started
 See each model folder’s `README.md` for model-specific instructions.
