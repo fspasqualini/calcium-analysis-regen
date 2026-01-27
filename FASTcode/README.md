@@ -1,0 +1,220 @@
+# FAST: FrAme-multiplexed SpatioTemporal Learning Strategy
+<p align="center">
+  <img src="./FAST_logo.png" alt="FAST Logo" width="600"/>
+
+![Python](https://img.shields.io/badge/Python-3.9-blue)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.x-orange)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
+FAST is a real-time self-supervised denoising framework for fluorescence neural imaging, achieving enhanced image quality in low-SNR scenarios through spatiotemporal joint optimization. (https://doi.org/10.21203/rs.3.rs-6101322/v1)
+
+## ✨ Key Features
+
+- 🚀 **Real-Time Processing**: >1000 fps denoising (hardware-dependent)
+- 🤖 **Self-Supervised Learning**: Eliminates need for clean ground truth
+- 🔄 **Spatiotemporal Optimization**: Frame-multiplexing enhances SNR
+- 📊 **High Adaptability**: Suitable for various fluorescence imaging data
+
+## 🛠 Installation
+
+### Requirements
+- Python 3.9+
+- PyTorch 2.x (CUDA version aligned with your hardware)
+- CUDA-capable GPU (recommended)
+
+#### Tested Environments
+- **Windows 10**: NVIDIA RTX 3060, RTX 3090, RTX 4070
+- **Ubuntu 22.04**: NVIDIA RTX A6000
+- **CUDA Version**: 12.4
+  
+#### Detailed Package Versions
+```
+numpy==1.24.1
+torch==2.5.1
+torchvision==0.20.1
+torchaudio==2.5.1
+scikit-image==0.24.0
+tqdm==4.66.5
+pyqt5==5.15.7
+pyqt5-qt5==5.15.2
+pyqt5-sip==12.11.0
+csbdeep==0.8.1
+```
+
+### Quick Setup
+```bash
+# Create and activate environment
+conda create -n FAST python=3.9
+conda activate FAST
+pip install -r requirements.txt
+```
+
+## 🚀 Quick Start
+
+### Command Line Mode
+```bash
+# Training mode
+python main.py --config_path "./params.json"
+
+# Testing mode (with pretrained model)
+python main.py --config_path "./checkpoint/model_name/config.json" --test_path "./data/test/test_dir"
+```
+
+### GUI Mode
+```bash
+# Launch training GUI
+python Train_GUI.py
+
+# Launch testing GUI
+python Test_GUI.py
+```
+
+## 📁 Directory Structure
+```
+FAST/
+├── checkpoint/         # Model checkpoints
+│   └── model_name
+├── data/              # Data directory
+│   ├── test/          # Testing data
+│   └── train/         # Training data
+├── datasets/          # Dataset processing
+│   ├── dataAug.py     # Data augmentation
+│   ├── data_process.py
+│   └── dataset.py     # Dataset classes
+├── environment.yml    # Environment configuration
+├── FAST_logo.png     # Project logo
+├── log.txt           # Runtime logs
+├── main.py           # Main entry point
+├── models/           # Model architectures
+│   ├── baseLayers.py
+│   ├── loss/         # Loss functions
+│   │   └── loss.py
+│   └── Unet_Lite.py  # Main model
+├── params.json       # Configuration file
+├── result/           # Output results
+│   └── model_name
+├── Test_GUI.py       # GUI for testing
+├── test_in_gui.py
+├── test.py          # Testing script
+├── Train_GUI.py      # GUI for training
+├── train_in_gui.py
+├── train.py         # Training script
+└── utils/           # Utility functions
+    ├── config.py    # Configuration utils
+    ├── fileSplit.py
+    ├── general.py   # General utilities
+    └── __init__.py
+```
+
+## ⚙️ Configuration
+
+Customize model parameters by modifying `params.json`:
+
+```json
+{
+    "data_extension": "tif",
+    "epochs": 100,
+    "miniBatch_size": 4,
+    "lr": 0.0001,
+    "weight_decay": 0.9,
+    "gpu_ids": "0",
+    "train_frames": 2000,
+    "data_type": "3D",
+    "denoising_strategy": "FAST",
+    "seed": 123,
+    "save_freq": 25,
+    "clip_gradients": 20.0,
+    "num_workers": 0,
+    "batch_size": 1
+}
+```
+
+## 📝 Usage Guide
+
+### Training a Model on Your Own Data (3 Steps)
+
+1. **Prepare Training Data**  
+   Place one or more `.tif`/`.tiff` files (each should be an xy-t stack, ideally >1000 frames per file) into a new folder under `./data/train/`, e.g., `./data/train/MyTrainDataset/`.
+
+2. **Edit Configuration**  
+   Open `params.json` and set `"train_folder": "path/to/MyTrainDataset"`. Adjust other parameters as needed—see the [Configuration](#%EF%B8%8F-configuration) section for details on each option.
+
+3. **Start Training**  
+   Run the following command to train the model:
+   ```bash
+   python main.py --config_path "./params.json"
+   ```
+   After training, model weights and the config file will be saved in `./checkpoint/model_name/`.
+
+---
+
+### Using Your Trained FAST Model for Denoising (2 Steps)
+
+1. **Prepare Test Data**  
+   Place one or more `.tif`/`.tiff` files (xy-t stacks to be denoised) into a folder under `./data/test/`, e.g., `./data/test/MyTestDataset/`.
+
+2. **Run Inference**  
+   Use the following command to denoise your data with the trained model:
+   ```bash
+   python main.py --config_path "./checkpoint/model_name/config.json" --test_path "./data/test/MyTestDataset"
+   ```
+   After completion, you will find the processed results in the `./result/model_name` directory.
+
+## 🤝 Contributing
+
+We welcome contributions, particularly:
+
+1. 🐛 Bug reports and fixes
+2. ✨ New feature proposals and implementations
+3. 📚 Documentation improvements
+4. 🎨 Code optimizations
+
+### Coding Standards
+- Use `UpperCamelCase` for class names
+- Use `lowercase_with_underscores` for functions and variables
+- Include docstrings for core functions
+- Follow PEP8 standards (validate using `flake8`)
+
+## 📄 License
+
+This project is licensed under the **GNU General Public License v3.0**. This means you are free to:
+
+- ✅ Use
+- ✅ Modify
+- ✅ Distribute
+
+But you must:
+- ⚠️ Disclose source
+- ⚠️ Include original copyright
+- ⚠️ Use the same license
+
+See [LICENSE](LICENSE) file for full text.
+
+## ❓ FAQ
+
+<details>
+<summary>Coming soon</summary>
+
+</details>
+
+
+
+## 📮 Contact
+
+- 📧 Email: yiqunwang22@fudan.edu.cn
+- 🌐 Project Page: [GitHub Repository](https://github.com/FDU-donglab/FAST)
+
+---
+
+### Citation
+
+If you use FAST in your research, please cite our paper:
+
+```bibtex
+@article{wang2024real,
+    title={Real-time self-supervised denoising for high-speed fluorescence neural imaging},
+    author={Yiqun Wang and Others},
+    journal={https://doi.org/10.21203/rs.3.rs-6101322/v1},
+    year={2025}
+}
+```

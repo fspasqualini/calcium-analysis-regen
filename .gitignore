@@ -30,4 +30,11 @@ result/phase3_frankenstein/
 # Keep comparison examples (small/curated)
 !result/comparison-example/
 
+# FASTcode outputs (large files) now tracked in-repo
+FASTcode/result/
+!FASTcode/result/comparison-example/
+
+# Repo-level FASTcode results archive
+results-from-FASTcode/
+
 Fiji/
