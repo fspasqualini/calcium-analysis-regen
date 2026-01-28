@@ -16,6 +16,7 @@ This repo is organized to keep **model code**, **data**, and **results** separat
 - **Results (outputs, reports, and figures)**  
   - Stored under dedicated repo-level folders (keep separate from model code).  
   - Current: `results-from-FASTcode/`  
+  - Planned: `results-from-DeepCAD/`  
   - Examples: `result/`, `analysis/`, `figures/` (create as needed).
 
 - **Tools / integrations**  

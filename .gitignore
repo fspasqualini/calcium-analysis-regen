@@ -41,4 +41,13 @@ results-from-FASTcode/
 results/
 analysis/
 
+# Repo-level DeepCAD results
+results-from-DeepCAD/
+
+# Repo-level TeD results
+results-from-TeD/
+
+# Repo-level TeD cardioid results
+results-from-TeD-cardioid-data/
+
 Fiji/
