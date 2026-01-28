@@ -50,4 +50,8 @@ results-from-TeD/
 # Repo-level TeD cardioid results
 results-from-TeD-cardioid-data/
 
+# Post-processing outputs
+post-processing/output/
+post-processing/_cache/
+
 Fiji/
