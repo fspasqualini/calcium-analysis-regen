@@ -62,35 +62,19 @@ def get_frame_count_and_shape(path):
         return arr.shape[1], (arr.shape[0], arr.shape[2])
 
 
-def sample_percentiles(path, seed=0, samples=50, p_low=1, p_high=99):
-    frames, _ = get_frame_count_and_shape(path)
-    rng = np.random.default_rng(seed)
-    if frames <= samples:
-        indices = list(range(frames))
-    else:
-        indices = rng.choice(frames, size=samples, replace=False)
-        indices.sort()
-
-    values = []
-    with tifffile.TiffFile(path) as tif:
-        if len(tif.pages) > 1:
-            for idx in indices:
-                values.append(tif.pages[idx].asarray().ravel())
-        else:
-            arr = tif.pages[0].asarray()
-            t_axis = int(np.argmax(arr.shape))
-            if t_axis == 0:
-                for idx in indices:
-                    values.append(arr[idx].ravel())
-            elif t_axis == 2:
-                for idx in indices:
-                    values.append(arr[:, :, idx].ravel())
-            else:
-                for idx in indices:
-                    values.append(arr[:, idx, :].ravel())
-
-    sample = np.concatenate(values)
-    return np.percentile(sample, p_low), np.percentile(sample, p_high)
+def min_max_tiff(path):
+    min_val = None
+    max_val = None
+    for frame in iter_tiff_frames(path):
+        frame_min = float(np.min(frame))
+        frame_max = float(np.max(frame))
+        if min_val is None or frame_min < min_val:
+            min_val = frame_min
+        if max_val is None or frame_max > max_val:
+            max_val = frame_max
+    if min_val is None or max_val is None:
+        raise ValueError(f"No frames found in {path}")
+    return min_val, max_val
 
 
 def normalize_frame(frame, p_low, p_high):
@@ -191,10 +175,17 @@ def draw_text_with_outline(draw, position, text, font, fill=(255, 255, 255), out
     draw.text(position, text, font=font, fill=fill)
 
 
+def load_font(size):
+    try:
+        return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", size)
+    except Exception:
+        return ImageFont.load_default()
+
+
 def add_timestamp(frame, ms):
     img = Image.fromarray(frame)
     draw = ImageDraw.Draw(img)
-    font = ImageFont.load_default()
+    font = load_font(48)
     text = f"t = {ms:.0f} ms"
     draw_text_with_outline(draw, (8, 8), text, font)
     return np.asarray(img)
@@ -203,13 +194,13 @@ def add_timestamp(frame, ms):
 def add_scalebar(frame, microns=250, fov_microns=1500):
     img = Image.fromarray(frame)
     draw = ImageDraw.Draw(img)
-    font = ImageFont.load_default()
 
     h, w = frame.shape[:2]
-    bar_len = int(round(w * (microns / fov_microns)))
+    bar_len = int(round(w * (microns / fov_microns) * 4))
     bar_height = max(4, h // 200)
     pad = 12
 
+    bar_len = min(bar_len, w - 2 * pad)
     x1 = w - pad
     x0 = x1 - bar_len
     y1 = h - pad
@@ -217,8 +208,6 @@ def add_scalebar(frame, microns=250, fov_microns=1500):
 
     draw.rectangle([x0, y0, x1, y1], fill=(255, 255, 255))
     draw.rectangle([x0, y0, x1, y1], outline=(0, 0, 0))
-    label = f"{microns} um"
-    draw_text_with_outline(draw, (x0, y0 - 14), label, font)
     return np.asarray(img)
 
 
@@ -372,12 +361,20 @@ def main():
         roi_traces = {}
         mp4_paths = {}
 
+        min_vals = {}
+        max_vals = {}
+        for label, path in version_paths.items():
+            print(f"  Scanning {label} for min/max...")
+            min_vals[label], max_vals[label] = min_max_tiff(path)
+
+        global_min = min(min_vals.values())
+        global_max = max(max_vals.values())
+
         for label, path in version_paths.items():
             print(f"  Encoding {label}...")
-            p_low, p_high = sample_percentiles(path, seed=args.seed)
             mp4_path = os.path.join(out_movie_dir, f"{label.lower().replace('-', '')}.mp4")
             global_trace, roi_trace = compute_traces_and_write_mp4(
-                path, mp4_path, rois, p_low, p_high, args.fps
+                path, mp4_path, rois, global_min, global_max, args.fps
             )
             traces[label] = global_trace
             roi_traces[label] = roi_trace
