@@ -7,6 +7,7 @@ for the long-batch calcium imaging movies.
 
 Generates, for each raw movie in `training_data/long-batch/`:
 - A 2x2 montage MP4 (raw + FAST + DeepCAD-RT + TeD)
+- A 2x2 montage MP4 with background subtraction on denoisers
 - A global intensity (ΔF/F0) plot over time
 - A ROI-averaged calcium transient plot (mean ± std across ROIs)
 - ROI coordinates saved to JSON
@@ -28,7 +29,8 @@ python3 post-processing/make_montages.py \
   --fps 10 \
   --roi-size 32 \
   --roi-count 5 \
-  --seed 0
+  --seed 0 \
+  --bg-sigma 30
 
 # Optional: run a single file
 python3 post-processing/make_montages.py \
@@ -42,6 +44,9 @@ python3 post-processing/make_montages.py \
 
 ### Outputs (per movie)
 - `montage.mp4`
-- `global_dff.png`
-- `roi_dff.png`
+- `montage_bg.mp4`
+- `global_dff.pdf`
+- `roi_dff.pdf`
 - `rois.json`
+- `global_dff.csv`
+- `roi_dff.csv`

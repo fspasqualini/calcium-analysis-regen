@@ -2,6 +2,7 @@
 """Generate montage videos and calcium transient plots for long-batch movies."""
 
 import argparse
+import csv
 import json
 import math
 import os
@@ -13,6 +14,8 @@ import numpy as np
 import tifffile
 import imageio.v2 as imageio
 from PIL import Image, ImageDraw, ImageFont
+from scipy.ndimage import gaussian_filter
+import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 
 
@@ -62,10 +65,15 @@ def get_frame_count_and_shape(path):
         return arr.shape[1], (arr.shape[0], arr.shape[2])
 
 
-def min_max_tiff(path):
+def min_max_tiff(path, bg_sigma=None):
     min_val = None
     max_val = None
     for frame in iter_tiff_frames(path):
+        frame = frame.astype(np.float32)
+        if bg_sigma is not None:
+            bg = gaussian_filter(frame, sigma=bg_sigma)
+            frame = frame - bg
+            frame[frame < 0] = 0
         frame_min = float(np.min(frame))
         frame_max = float(np.max(frame))
         if min_val is None or frame_min < min_val:
@@ -77,12 +85,19 @@ def min_max_tiff(path):
     return min_val, max_val
 
 
-def normalize_frame(frame, p_low, p_high):
+def build_colormap_lut(name="plasma"):
+    cmap = cm.get_cmap(name, 256)
+    lut = (cmap(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)
+    return lut
+
+
+def normalize_frame(frame, p_low, p_high, lut):
     if p_high <= p_low:
-        return np.zeros_like(frame, dtype=np.uint8)
+        return np.zeros((frame.shape[0], frame.shape[1], 3), dtype=np.uint8)
     scaled = (frame.astype(np.float32) - p_low) / (p_high - p_low)
     scaled = np.clip(scaled, 0.0, 1.0)
-    return (scaled * 255.0).astype(np.uint8)
+    idx = (scaled * 255.0).astype(np.uint8)
+    return lut[idx]
 
 
 def choose_rois(height, width, roi_size, count, seed=0):
@@ -102,7 +117,7 @@ def choose_rois(height, width, roi_size, count, seed=0):
     return rois
 
 
-def compute_traces_and_write_mp4(path, out_mp4, rois, p_low, p_high, fps):
+def compute_traces_and_write_mp4(path, out_mp4, rois, p_low, p_high, fps, lut, bg_sigma=None):
     global_trace = []
     roi_traces = [[] for _ in rois]
 
@@ -117,14 +132,17 @@ def compute_traces_and_write_mp4(path, out_mp4, rois, p_low, p_high, fps):
 
     for frame in iter_tiff_frames(path):
         frame = frame.astype(np.float32)
+        if bg_sigma is not None:
+            bg = gaussian_filter(frame, sigma=bg_sigma)
+            frame = frame - bg
+            frame[frame < 0] = 0
         global_trace.append(frame.mean())
         for idx, roi in enumerate(rois):
             y0, y1 = roi["y"], roi["y"] + roi["h"]
             x0, x1 = roi["x"], roi["x"] + roi["w"]
             roi_traces[idx].append(frame[y0:y1, x0:x1].mean())
 
-        vis = normalize_frame(frame, p_low, p_high)
-        vis_rgb = np.stack([vis, vis, vis], axis=-1)
+        vis_rgb = normalize_frame(frame, p_low, p_high, lut)
         writer.append_data(vis_rgb)
 
     writer.close()
@@ -137,7 +155,33 @@ def dff(trace, eps=1e-6):
     return (trace - f0) / denom
 
 
-def plot_global_dff(out_png, frames_ms, traces, title):
+def write_global_csv(path, frames_ms, traces):
+    fieldnames = ["time_ms"] + list(traces.keys())
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for i, t in enumerate(frames_ms):
+            row = {"time_ms": t}
+            for key, values in traces.items():
+                row[key] = float(values[i])
+            writer.writerow(row)
+
+
+def write_roi_csv(path, frames_ms, roi_traces):
+    fieldnames = ["time_ms", "roi_id"] + list(roi_traces.keys())
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        roi_count = next(iter(roi_traces.values())).shape[0]
+        for roi_id in range(roi_count):
+            for i, t in enumerate(frames_ms):
+                row = {"time_ms": t, "roi_id": roi_id}
+                for key, values in roi_traces.items():
+                    row[key] = float(values[roi_id, i])
+                writer.writerow(row)
+
+
+def plot_global_dff(out_path, frames_ms, traces, title):
     plt.figure(figsize=(10, 4))
     for label, trace, color in traces:
         plt.plot(frames_ms, dff(trace), label=label, color=color, linewidth=1.5)
@@ -146,11 +190,11 @@ def plot_global_dff(out_png, frames_ms, traces, title):
     plt.title(title)
     plt.legend(loc="upper right", ncol=2)
     plt.tight_layout()
-    plt.savefig(out_png, dpi=200)
+    plt.savefig(out_path)
     plt.close()
 
 
-def plot_roi_dff(out_png, frames_ms, roi_traces, title):
+def plot_roi_dff(out_path, frames_ms, roi_traces, title):
     plt.figure(figsize=(10, 4))
     for label, traces, color in roi_traces:
         dff_traces = np.asarray([dff(t) for t in traces])
@@ -163,8 +207,71 @@ def plot_roi_dff(out_png, frames_ms, roi_traces, title):
     plt.title(title)
     plt.legend(loc="upper right", ncol=2)
     plt.tight_layout()
-    plt.savefig(out_png, dpi=200)
+    plt.savefig(out_path)
     plt.close()
+
+
+def baseline_std(trace, quantile=20):
+    cutoff = np.percentile(trace, quantile)
+    low = trace[trace <= cutoff]
+    if low.size == 0:
+        return float(np.std(trace))
+    return float(np.std(low))
+
+
+def snr_proxy(trace):
+    low = np.percentile(trace, 10)
+    high = np.percentile(trace, 95)
+    sigma = baseline_std(trace)
+    if sigma == 0:
+        return 0.0
+    return float((high - low) / sigma)
+
+
+def peak_timing_shift(ref, target):
+    ref = ref - np.mean(ref)
+    target = target - np.mean(target)
+    corr = np.correlate(target, ref, mode="full")
+    lag = int(np.argmax(corr) - (len(ref) - 1))
+    return lag
+
+
+def shape_correlation(ref, target):
+    if np.std(ref) == 0 or np.std(target) == 0:
+        return 0.0
+    return float(np.corrcoef(ref, target)[0, 1])
+
+
+def plot_metrics(out_path, metrics):
+    labels = ["FAST", "DeepCAD-RT", "TeD"]
+    noise = [metrics[k]["baseline_std"] for k in labels]
+    snr = [metrics[k]["snr"] for k in labels]
+    lag = [metrics[k]["timing_shift_ms"] for k in labels]
+    corr = [metrics[k]["shape_corr"] for k in labels]
+
+    fig, axes = plt.subplots(2, 2, figsize=(10, 6))
+    axes[0, 0].bar(labels, noise, color=[COLOR_FAST, COLOR_DEEPCAD, COLOR_TED])
+    axes[0, 0].set_title("Baseline noise (lower is better)")
+    axes[0, 0].set_ylabel("Std of low-activity ΔF/F0")
+
+    axes[0, 1].bar(labels, snr, color=[COLOR_FAST, COLOR_DEEPCAD, COLOR_TED])
+    axes[0, 1].set_title("SNR proxy (higher is better)")
+    axes[0, 1].set_ylabel("(P95-P10)/σ")
+
+    axes[1, 0].bar(labels, lag, color=[COLOR_FAST, COLOR_DEEPCAD, COLOR_TED])
+    axes[1, 0].set_title("Timing shift vs raw")
+    axes[1, 0].set_ylabel("Lag (ms)")
+
+    axes[1, 1].bar(labels, corr, color=[COLOR_FAST, COLOR_DEEPCAD, COLOR_TED])
+    axes[1, 1].set_title("Shape correlation vs raw")
+    axes[1, 1].set_ylabel("Pearson r")
+
+    for ax in axes.flat:
+        ax.tick_params(axis="x", rotation=15)
+
+    fig.tight_layout()
+    fig.savefig(out_path)
+    plt.close(fig)
 
 
 def draw_text_with_outline(draw, position, text, font, fill=(255, 255, 255), outline=(0, 0, 0)):
@@ -197,7 +304,7 @@ def add_scalebar(frame, microns=250, fov_microns=1500):
 
     h, w = frame.shape[:2]
     bar_len = int(round(w * (microns / fov_microns) * 4))
-    bar_height = max(4, h // 200)
+    bar_height = max(4, h // 200) * 4
     pad = 12
 
     bar_len = min(bar_len, w - 2 * pad)
@@ -255,6 +362,38 @@ def make_montage(raw_mp4, fast_mp4, deepcad_mp4, ted_mp4, out_mp4, fps):
     writer.close()
 
 
+def make_grid_montage(rows, out_mp4, fps):
+    readers = []
+    for row in rows:
+        readers.append([imageio.get_reader(p) for p in row])
+
+    writer = imageio.get_writer(
+        out_mp4,
+        fps=fps,
+        codec="libx264",
+        pixelformat="yuv420p",
+        ffmpeg_params=["-crf", "18", "-preset", "slow"],
+        macro_block_size=1,
+    )
+
+    while True:
+        try:
+            row_frames = []
+            for row in readers:
+                frames = [r.get_next_data() for r in row]
+                row_frames.append(np.concatenate(frames, axis=1))
+            grid = np.concatenate(row_frames, axis=0)
+        except Exception:
+            break
+
+        writer.append_data(grid)
+
+    for row in readers:
+        for r in row:
+            r.close()
+    writer.close()
+
+
 def extract_fast_file(raw_name, zip_paths, cache_dir):
     os.makedirs(cache_dir, exist_ok=True)
     out_path = os.path.join(cache_dir, raw_name)
@@ -293,6 +432,7 @@ def main():
     parser.add_argument("--roi-count", type=int, default=5)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--only", help="Process a single raw filename (e.g., FGF2-G3_9.5110.tif)")
+    parser.add_argument("--bg-sigma", type=float, default=30, help="Gaussian sigma for background subtraction")
     args = parser.parse_args()
 
     raw_files = sorted(glob(os.path.join(args.raw_dir, "*.tif")))
@@ -318,6 +458,13 @@ def main():
 
     os.makedirs(args.out_dir, exist_ok=True)
     fast_cache = os.path.join(args.out_dir, "_cache", "fast_phase1_default")
+    aggregate_dir = os.path.join(args.out_dir, "aggregate")
+    os.makedirs(aggregate_dir, exist_ok=True)
+
+    aggregate_global = []
+    aggregate_roi = []
+    per_movie_metrics = []
+    aggregate_montage_rows = []
 
     for raw_path in raw_files:
         raw_name = os.path.basename(raw_path)
@@ -361,6 +508,8 @@ def main():
         roi_traces = {}
         mp4_paths = {}
 
+        lut = build_colormap_lut("plasma")
+
         min_vals = {}
         max_vals = {}
         for label, path in version_paths.items():
@@ -374,11 +523,37 @@ def main():
             print(f"  Encoding {label}...")
             mp4_path = os.path.join(out_movie_dir, f"{label.lower().replace('-', '')}.mp4")
             global_trace, roi_trace = compute_traces_and_write_mp4(
-                path, mp4_path, rois, global_min, global_max, args.fps
+                path, mp4_path, rois, global_min, global_max, args.fps, lut
             )
             traces[label] = global_trace
             roi_traces[label] = roi_trace
             mp4_paths[label] = mp4_path
+
+        bg_min_vals = {}
+        bg_max_vals = {}
+        for label, path in version_paths.items():
+            if label == "Raw":
+                continue
+            print(f"  Scanning {label} (BG) for min/max...")
+            bg_min_vals[label], bg_max_vals[label] = min_max_tiff(path, bg_sigma=args.bg_sigma)
+
+        bg_global_min = min(bg_min_vals.values())
+        bg_global_max = max(bg_max_vals.values())
+
+        bg_traces = {}
+        bg_roi_traces = {}
+        bg_mp4_paths = {}
+        for label, path in version_paths.items():
+            if label == "Raw":
+                continue
+            print(f"  Encoding {label} (BG)...")
+            mp4_path = os.path.join(out_movie_dir, f"{label.lower().replace('-', '')}_bg.mp4")
+            global_trace, roi_trace = compute_traces_and_write_mp4(
+                path, mp4_path, rois, bg_global_min, bg_global_max, args.fps, lut, bg_sigma=args.bg_sigma
+            )
+            bg_traces[label] = global_trace
+            bg_roi_traces[label] = roi_trace
+            bg_mp4_paths[label] = mp4_path
 
         montage_path = os.path.join(out_movie_dir, "montage.mp4")
         print("  Building montage...")
@@ -391,12 +566,23 @@ def main():
             args.fps,
         )
 
+        montage_bg_path = os.path.join(out_movie_dir, "montage_bg.mp4")
+        print("  Building montage (BG)...")
+        make_montage(
+            mp4_paths["Raw"],
+            bg_mp4_paths["FAST"],
+            bg_mp4_paths["DeepCAD-RT"],
+            bg_mp4_paths["TeD"],
+            montage_bg_path,
+            args.fps,
+        )
+
         # 10 ms per frame is fixed by requirement, not fps (fps controls playback rate)
         min_len = min(len(t) for t in traces.values())
         frames_ms = np.arange(min_len) * 10
 
         plot_global_dff(
-            os.path.join(out_movie_dir, "global_dff.png"),
+            os.path.join(out_movie_dir, "global_dff.pdf"),
             frames_ms,
             [
                 ("Raw", traces["Raw"][:min_len], COLOR_RAW),
@@ -408,7 +594,7 @@ def main():
         )
 
         plot_roi_dff(
-            os.path.join(out_movie_dir, "roi_dff.png"),
+            os.path.join(out_movie_dir, "roi_dff.pdf"),
             frames_ms,
             [
                 ("Raw", roi_traces["Raw"][:, :min_len], COLOR_RAW),
@@ -417,6 +603,134 @@ def main():
                 ("TeD", roi_traces["TeD"][:, :min_len], COLOR_TED),
             ],
             f"ROI ΔF/F0 (mean ± std) - {raw_name}",
+        )
+
+        global_csv = os.path.join(out_movie_dir, "global_dff.csv")
+        roi_csv = os.path.join(out_movie_dir, "roi_dff.csv")
+        trace_dict = {
+            "raw": dff(traces["Raw"][:min_len]),
+            "fast": dff(traces["FAST"][:min_len]),
+            "deepcadrt": dff(traces["DeepCAD-RT"][:min_len]),
+            "ted": dff(traces["TeD"][:min_len]),
+            "fast_bg": dff(bg_traces["FAST"][:min_len]),
+            "deepcadrt_bg": dff(bg_traces["DeepCAD-RT"][:min_len]),
+            "ted_bg": dff(bg_traces["TeD"][:min_len]),
+        }
+        write_global_csv(global_csv, frames_ms, trace_dict)
+
+        roi_trace_dict = {
+            "raw": np.asarray([dff(t) for t in roi_traces["Raw"][:, :min_len]]),
+            "fast": np.asarray([dff(t) for t in roi_traces["FAST"][:, :min_len]]),
+            "deepcadrt": np.asarray([dff(t) for t in roi_traces["DeepCAD-RT"][:, :min_len]]),
+            "ted": np.asarray([dff(t) for t in roi_traces["TeD"][:, :min_len]]),
+            "fast_bg": np.asarray([dff(t) for t in bg_roi_traces["FAST"][:, :min_len]]),
+            "deepcadrt_bg": np.asarray([dff(t) for t in bg_roi_traces["DeepCAD-RT"][:, :min_len]]),
+            "ted_bg": np.asarray([dff(t) for t in bg_roi_traces["TeD"][:, :min_len]]),
+        }
+        write_roi_csv(roi_csv, frames_ms, roi_trace_dict)
+
+        aggregate_global.append(
+            {
+                "movie": raw_name,
+                "frames_ms": frames_ms,
+                "traces": trace_dict,
+            }
+        )
+        aggregate_roi.append(
+            {
+                "movie": raw_name,
+                "frames_ms": frames_ms,
+                "roi_traces": roi_trace_dict,
+            }
+        )
+
+        ref = trace_dict["raw"]
+        metrics = {}
+        for label, key in [("FAST", "fast_bg"), ("DeepCAD-RT", "deepcadrt_bg"), ("TeD", "ted_bg")]:
+            target = trace_dict[key]
+            metrics[label] = {
+                "baseline_std": baseline_std(target),
+                "snr": snr_proxy(target),
+                "timing_shift_ms": peak_timing_shift(ref, target) * 10,
+                "shape_corr": shape_correlation(ref, target),
+            }
+        per_movie_metrics.append(metrics)
+
+        aggregate_montage_rows.append(
+            [mp4_paths["Raw"], bg_mp4_paths["FAST"], bg_mp4_paths["DeepCAD-RT"], bg_mp4_paths["TeD"]]
+        )
+
+    if aggregate_global:
+        global_csv = os.path.join(aggregate_dir, "global_dff.csv")
+        fieldnames = [
+            "movie",
+            "time_ms",
+            "raw",
+            "fast",
+            "deepcadrt",
+            "ted",
+            "fast_bg",
+            "deepcadrt_bg",
+            "ted_bg",
+        ]
+        with open(global_csv, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for entry in aggregate_global:
+                frames_ms = entry["frames_ms"]
+                traces = entry["traces"]
+                for i, t in enumerate(frames_ms):
+                    row = {"movie": entry["movie"], "time_ms": t}
+                    for key in fieldnames[2:]:
+                        row[key] = float(traces[key][i])
+                    writer.writerow(row)
+
+    if aggregate_roi:
+        roi_csv = os.path.join(aggregate_dir, "roi_dff.csv")
+        fieldnames = [
+            "movie",
+            "roi_id",
+            "time_ms",
+            "raw",
+            "fast",
+            "deepcadrt",
+            "ted",
+            "fast_bg",
+            "deepcadrt_bg",
+            "ted_bg",
+        ]
+        with open(roi_csv, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for entry in aggregate_roi:
+                frames_ms = entry["frames_ms"]
+                roi_traces = entry["roi_traces"]
+                roi_count = roi_traces["raw"].shape[0]
+                for roi_id in range(roi_count):
+                    for i, t in enumerate(frames_ms):
+                        row = {
+                            "movie": entry["movie"],
+                            "roi_id": roi_id,
+                            "time_ms": t,
+                        }
+                        for key in fieldnames[3:]:
+                            row[key] = float(roi_traces[key][roi_id, i])
+                        writer.writerow(row)
+
+    if per_movie_metrics:
+        metrics_avg = {"FAST": {}, "DeepCAD-RT": {}, "TeD": {}}
+        for label in metrics_avg:
+            for key in ["baseline_std", "snr", "timing_shift_ms", "shape_corr"]:
+                metrics_avg[label][key] = float(
+                    np.mean([m[label][key] for m in per_movie_metrics])
+                )
+        plot_metrics(os.path.join(aggregate_dir, "aggregate_metrics.pdf"), metrics_avg)
+
+    if aggregate_montage_rows:
+        make_grid_montage(
+            aggregate_montage_rows,
+            os.path.join(aggregate_dir, "montage_5x4.mp4"),
+            args.fps,
         )
 
     return 0
