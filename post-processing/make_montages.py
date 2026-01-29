@@ -181,7 +181,7 @@ def write_roi_csv(path, frames_ms, roi_traces):
                 writer.writerow(row)
 
 
-def plot_global_dff(out_path, frames_ms, traces, title):
+def plot_global_dff(out_pdf, out_png, frames_ms, traces, title):
     plt.figure(figsize=(10, 4))
     for label, trace, color in traces:
         plt.plot(frames_ms, dff(trace), label=label, color=color, linewidth=1.5)
@@ -190,11 +190,12 @@ def plot_global_dff(out_path, frames_ms, traces, title):
     plt.title(title)
     plt.legend(loc="upper right", ncol=2)
     plt.tight_layout()
-    plt.savefig(out_path)
+    plt.savefig(out_pdf)
+    plt.savefig(out_png, dpi=200)
     plt.close()
 
 
-def plot_roi_dff(out_path, frames_ms, roi_traces, title):
+def plot_roi_dff(out_pdf, out_png, frames_ms, roi_traces, title):
     plt.figure(figsize=(10, 4))
     for label, traces, color in roi_traces:
         dff_traces = np.asarray([dff(t) for t in traces])
@@ -207,7 +208,8 @@ def plot_roi_dff(out_path, frames_ms, roi_traces, title):
     plt.title(title)
     plt.legend(loc="upper right", ncol=2)
     plt.tight_layout()
-    plt.savefig(out_path)
+    plt.savefig(out_pdf)
+    plt.savefig(out_png, dpi=200)
     plt.close()
 
 
@@ -376,17 +378,25 @@ def make_grid_montage(rows, out_mp4, fps):
         macro_block_size=1,
     )
 
+    frame_idx = 0
+    last_row = len(readers) - 1
+    last_col = len(readers[0]) - 1 if readers else 0
     while True:
         try:
             row_frames = []
-            for row in readers:
+            for r_idx, row in enumerate(readers):
                 frames = [r.get_next_data() for r in row]
+                if r_idx == 0 and frames:
+                    frames[0] = add_timestamp(frames[0], frame_idx * 10)
+                if r_idx == last_row and frames:
+                    frames[last_col] = add_scalebar(frames[last_col])
                 row_frames.append(np.concatenate(frames, axis=1))
             grid = np.concatenate(row_frames, axis=0)
         except Exception:
             break
 
         writer.append_data(grid)
+        frame_idx += 1
 
     for row in readers:
         for r in row:
@@ -583,6 +593,7 @@ def main():
 
         plot_global_dff(
             os.path.join(out_movie_dir, "global_dff.pdf"),
+            os.path.join(out_movie_dir, "global_dff.png"),
             frames_ms,
             [
                 ("Raw", traces["Raw"][:min_len], COLOR_RAW),
@@ -595,6 +606,7 @@ def main():
 
         plot_roi_dff(
             os.path.join(out_movie_dir, "roi_dff.pdf"),
+            os.path.join(out_movie_dir, "roi_dff.png"),
             frames_ms,
             [
                 ("Raw", roi_traces["Raw"][:, :min_len], COLOR_RAW),

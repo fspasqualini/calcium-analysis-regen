@@ -46,7 +46,9 @@ python3 post-processing/make_montages.py \
 - `montage.mp4`
 - `montage_bg.mp4`
 - `global_dff.pdf`
+- `global_dff.png`
 - `roi_dff.pdf`
+- `roi_dff.png`
 - `rois.json`
 - `global_dff.csv`
 - `roi_dff.csv`
