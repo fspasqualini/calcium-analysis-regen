@@ -35,3 +35,8 @@ This repo is organized to keep **model code**, **data**, and **results** separat
 
 ## Getting started
 See each model folder’s `README.md` for model-specific instructions.
+
+## Post-processing & analysis
+- `post-processing/` contains scripts that generate montage videos, ΔF/F0 plots, CSV traces, and aggregate comparisons across models.
+- Outputs are written under `post-processing/output/` (gitignored).
+- Background subtraction uses per-frame Gaussian filtering (sigma default 30) and is applied to denoised stacks for comparison.

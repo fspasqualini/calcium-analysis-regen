@@ -1,15 +1,16 @@
 # Post-processing
 
 This folder contains scripts to generate montage videos and intensity/ROI plots
-for the long-batch calcium imaging movies.
+for the long-batch calcium imaging movies, plus aggregate comparisons across models.
 
 ## Script: `make_montages.py`
 
 Generates, for each raw movie in `training_data/long-batch/`:
 - A 2x2 montage MP4 (raw + FAST + DeepCAD-RT + TeD)
-- A 2x2 montage MP4 with background subtraction on denoisers
-- A global intensity (ΔF/F0) plot over time
-- A ROI-averaged calcium transient plot (mean ± std across ROIs)
+- A 2x2 montage MP4 with background subtraction on denoisers (Gaussian sigma, default 30)
+- A global intensity (ΔF/F0) plot over time (PDF + PNG)
+- A ROI-averaged calcium transient plot (mean ± std across ROIs, PDF + PNG)
+- CSVs with ΔF/F0 traces (global + ROI)
 - ROI coordinates saved to JSON
 
 ### Default data locations
@@ -52,3 +53,15 @@ python3 post-processing/make_montages.py \
 - `rois.json`
 - `global_dff.csv`
 - `roi_dff.csv`
+
+### Aggregate outputs
+Generated under `post-processing/output/aggregate/`:
+- `montage_5x4.mp4` (rows = datasets, cols = raw + 3 BG-denoised models; includes timestamp + scalebar)
+- `aggregate_metrics.pdf` (baseline noise, SNR proxy, timing shift, shape correlation)
+- `global_dff.csv` (all movies, global traces)
+- `roi_dff.csv` (all movies, ROI traces)
+
+## Background subtraction on denoised TIFFs
+`apply_bg_to_tiffs.py` applies per-frame Gaussian background subtraction and writes new stacks
+prefixed with `D-BG-` in the same folder. Default output is float32 to preserve fractional
+values created by subtraction.
